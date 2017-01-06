@@ -209,7 +209,7 @@ handle_call({open,Y,X},_From,State) when State#state.ready=:=true->
 							      opened=
 								  [Input|Opened],
 							     flag_count=
-								  FlagCount-1},
+								  FlagCount+1},
 				       case check_game_done(NowState) of
 					   won ->
 					       print_state(NowState,[]),
@@ -260,8 +260,8 @@ handle_call({flag,Y,X},_From,State) when State#state.ready =:= true->
 			    {reply,{ok,get_current_state(State,[])},State};
 			false ->
 			    NowState = State#state{flagged=[{Y,X}|Flagged]},
-			    print_state(NowState,[]),
 			    NewState = NowState#state{flag_count = FlagCount - 1},
+			    print_state(NewState,[]),
 			    {reply,{ok,get_current_state(NewState,[])},NewState}
 			end
 	    end;
@@ -291,8 +291,9 @@ handle_call({unflag,Y,X},_From,State) when State#state.ready =:= true->
 				       State;
 				   true ->
 				       NowState = State#state{flagged=Flagged--[{Y,X}]},
-				       print_state(NowState,[]),
-				       NowState#state{flag_count = FlagCount+1}
+				       UpState = NowState#state{flag_count = FlagCount+1},
+				       print_state(UpState,[]),
+				       UpState
 			       end
 		       end,
 		       {reply,{ok,get_current_state(NewState,[])},NewState};
@@ -419,15 +420,21 @@ find_mine_xiter(_,_Xiter,_Yiter,_Acc) ->
 %% continue --> Game not won
 %%--------------------------------------------------------------------
 check_game_done(State) ->
+    FlaggedLen = length(State#state.flagged),
     OpenedLen = length(State#state.opened),
     MineLen = length(State#state.mines),
     Totalpossib = State#state.xlimit * State#state.ylimit,
     Diff = Totalpossib - MineLen,
     case Diff of
    	OpenedLen ->
-	    io:format("Gameover, you won~n"),
-	    reset_game(State),
-	    won;
+	    case MineLen of
+		FlaggedLen ->
+		    io:format("Gameover, you won~n"),
+		    reset_game(State),
+		    won;
+		_ ->
+		    continue
+	    end;
 	_ ->
 	    continue
     end.
@@ -454,12 +461,14 @@ get_current_state(State,Mine) ->
 %% to print the state on the terminal
 %%--------------------------------------------------------------------
 print_state(State,Mine) ->
+    FlagCount = State#state.flag_count,
     Flagged = State#state.flagged,
     Opened = State#state.opened,
     Xlimit = State#state.xlimit,
     Ylimit = State#state.ylimit,
     MsgToPrint = form_print(Opened,Flagged,Xlimit,Ylimit,Mine),
     io:format("~n-----~n"),
+    io:format("flags Remain ~p~n",[FlagCount]),
     [io:format("~s~n",[EachRow])||EachRow<-MsgToPrint],
     io:format("-----~n").
 
