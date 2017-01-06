@@ -11,7 +11,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start/0,o/2,f/2,uf/2,load/1,reset/0,stop/0]).
+-export([start/0,o/2,f/2,uf/2,load/1,reset/0,state/0,stop/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -20,7 +20,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state,{allRows = [], %%List of each row data
-	       flag_count,
+	       flag_count, %%Flag_count will be equal to mines available
 	       mines = [], %% List of mines
 	       xlimit, %%Xbound for input
 	       ylimit, %%Ybound for input
@@ -47,7 +47,7 @@ start() ->
 %% @doc
 %% Opens a cell
 %%
-%% @spec o(Y,X) -> ok | {error,Reason}
+%% @spec o(Y,X) -> {ok,CurrentState} | {invalid_bound}
 %% @end
 %%--------------------------------------------------------------------
 o(Y,X) ->
@@ -57,7 +57,7 @@ o(Y,X) ->
 %% @doc
 %% Flags a cell
 %%
-%% @spec o(Y,X) -> ok | {error, Error}
+%% @spec o(Y,X) -> {ok,CurrentState} | {invalid_bound}
 %% @end
 %%--------------------------------------------------------------------
 f(Y,X) ->
@@ -67,7 +67,7 @@ f(Y,X) ->
 %% @doc
 %% Tries to UnFlag a cell
 %%
-%% @spec o(Y,X) -> ok | {error, Error}
+%% @spec o(Y,X) -> {ok,CurrentState} | {invalid_bound}
 %% @end
 %%--------------------------------------------------------------------
 uf(Y,X) ->
@@ -78,7 +78,8 @@ uf(Y,X) ->
 %% Load the game string
 %% Eg:"xxm,xmx,xxx"
 %%
-%% @spec load(String) -> ok | {error, Error}
+%% @spec load(String) -> ok | {invalid_input,String} | {mines,MinesList}
+%%                       {invalid_data,CurrentState}
 %% @end
 %%--------------------------------------------------------------------
 load(String) ->
@@ -88,11 +89,21 @@ load(String) ->
 %% @doc
 %% Resets the game
 %%
-%% @spec reset(String) -> ok | {error, Error}
+%% @spec reset(String) -> {reset,CurrentState}
 %% @end
 %%--------------------------------------------------------------------
 reset() ->
     gen_server:call(?MODULE,reset_game,1000).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% prints the current state of the game
+%%
+%% @spec state() -> {ok,CurrentState}
+%% @end
+%%--------------------------------------------------------------------
+state() ->
+    gen_server:call(?MODULE,state,1000).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -104,7 +115,6 @@ reset() ->
 stop() ->
     gen_server:stop(?MODULE).
 
-%%grid()
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -138,11 +148,20 @@ init([]) ->
 %% @end
 %%--------------------------------------------------------------------
 
+%% Prints the current state of the game
+handle_call(state,_From,State) when State#state.ready =:= true->
+    print_state(State,[]),
+    CurrentState = get_current_state(State,[]),
+    {reply,{ok,CurrentState},State};
+
+%% Resets a Game and prints the current State
 handle_call(reset_game,_From,State) when State#state.ready =:= true->
     NewState = reset_game(State),
     io:format("~n Game is RESET ~n"),
     Reset = get_current_state(NewState,[]),
     {reply,{reset,Reset},NewState};
+
+%%Loads game data string
 handle_call({load,String},_From,State) ->
     case validate_game_string(String) of
 	{true,AllRows,Xlimit,Ylimit} ->
@@ -166,6 +185,8 @@ handle_call({load,String},_From,State) ->
 	    io:format("Invalid input game data~n"),
 	    {reply,{invalid_input,String},State}
     end;
+
+%% Opens a cell on the minefield
 handle_call({open,Y,X},_From,State) when State#state.ready=:=true->
     Ylimit = State#state.ylimit,
     Xlimit = State#state.xlimit,
@@ -219,6 +240,8 @@ handle_call({open,Y,X},_From,State) when State#state.ready=:=true->
 	    io:format("Invalid bounds~n"),
 	    {reply,{invalid_bound},State}
     end;
+
+%%Flags a Cell in the minefield
 handle_call({flag,Y,X},_From,State) when State#state.ready =:= true->
     Ylimit = State#state.ylimit,
     Xlimit = State#state.xlimit,
@@ -247,6 +270,8 @@ handle_call({flag,Y,X},_From,State) when State#state.ready =:= true->
 	    print_state(State,[]),		
 	    {reply,{invalid_bound},State}
     end;
+
+%%Unflags a cell in the minefield
 handle_call({unflag,Y,X},_From,State) when State#state.ready =:= true->
     Ylimit = State#state.ylimit,
     Xlimit = State#state.xlimit,
@@ -276,6 +301,8 @@ handle_call({unflag,Y,X},_From,State) when State#state.ready =:= true->
 	    print_state(State,[]),		
 	    {reply,{invalid_bound},State}
     end;
+
+%%When all the above catches are not matched
 handle_call(_,_From,State) ->
     io:format("No game data loaded,load game first~n"),
     {reply,{no_data_loaded},State}.
@@ -332,13 +359,22 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+
+
+
+
+%%%===================================================================
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+%%%===================================================================
 
+%%--------------------------------------------------------------------
+%% Validates whether the given string is m X n array
+%%--------------------------------------------------------------------
 validate_game_string("") ->
     %%io:format("Invalid input game string~n");
-    ok;
+    false;
 validate_game_string(String) when is_list(String)->
     AllRows = [H|_Xrows] = string:tokens(String,","),
     LenXrows = length(AllRows),
@@ -352,6 +388,9 @@ validate_game_string(String) when is_list(String)->
 	    false
     end.
 
+%%--------------------------------------------------------------------
+%% Returns a list of mines, otherwise invalid
+%%--------------------------------------------------------------------
 find_mines(AllRows) ->
     find_mine_yiter(AllRows,0,[]).
 
@@ -374,7 +413,11 @@ find_mine_xiter([C|Rest],Xiter,Yiter,Acc) when C=:=120 orelse C=:=102->
 find_mine_xiter(_,_Xiter,_Yiter,_Acc) ->
     invalid.
 
-
+%%--------------------------------------------------------------------
+%% Returns the status of the game,
+%% won --> Game won by the player
+%% continue --> Game not won
+%%--------------------------------------------------------------------
 check_game_done(State) ->
     OpenedLen = length(State#state.opened),
     MineLen = length(State#state.mines),
@@ -389,10 +432,16 @@ check_game_done(State) ->
 	    continue
     end.
 
+%%--------------------------------------------------------------------
+%% Resets the state of the Game, the actual loaded data is not lost
+%%--------------------------------------------------------------------
 reset_game(State) ->
     State#state{flagged = [],
 		opened = []}.
 
+%%--------------------------------------------------------------------
+%% Returns the current state of the game, returns a list of row strings
+%%--------------------------------------------------------------------
 get_current_state(State,Mine) ->
     Flagged = State#state.flagged,
     Opened = State#state.opened,
@@ -400,6 +449,10 @@ get_current_state(State,Mine) ->
     Ylimit = State#state.ylimit,
     form_print(Opened,Flagged,Xlimit,Ylimit,Mine).   
 
+%%--------------------------------------------------------------------
+%% Works the same way as get_current_state, also has side effect to
+%% to print the state on the terminal
+%%--------------------------------------------------------------------
 print_state(State,Mine) ->
     Flagged = State#state.flagged,
     Opened = State#state.opened,
@@ -438,3 +491,5 @@ form_xiter(Yiter,Xiter,Opened,Flagged,Acc,Mine) ->
 		    end
 	    end
     end.
+
+%%--------------------------------------------------------------------
