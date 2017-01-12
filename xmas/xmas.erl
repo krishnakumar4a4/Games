@@ -2,7 +2,7 @@
 %%% xmas -- 
 %%%
 %%% @Copyright:    
-%%% @Creator:      Krishna Kumar Thokala (xthokri)
+%%% @Creator:      Krishna Kumar Thokala
 %%% @Date Created: 
 %%% @Description:  
 %%%-------------------------------------------------------------------
